@@ -1,0 +1,2476 @@
+[DialogueManager]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+[RequireComponent(typeof(AudioSource))]
+public class DialogueManager : MonoBehaviour
+{
+    [System.Serializable]
+    public struct DialogueBox // Message struct
+    {
+        public string message;
+        public string speaker;
+        public Sprite speakreSprite;
+    }
+    int number = -1; //index of message
+
+    [SerializeField]
+    DialogueBox[] dialogues; // All messages
+
+    [SerializeField]
+    Text textBox;
+    [SerializeField]
+    Text nameBox;
+    [SerializeField]
+    Image speaker;
+
+    AudioSource characterWritten;
+
+    bool AllTextShown = true; // Is active message done yet
+
+    private void Awake()
+    {
+        characterWritten = transform.GetComponent<AudioSource>();
+    }
+
+    private void Start()
+    {
+        if(dialogues.Length > 0)
+        {
+            ShowDialogue(); // show first dialogue
+        }
+    }
+
+
+    private void Update()
+    {
+        if(Input.GetButtonDown("Fire1"))
+        {
+            ShowDialogue(); // After pressing fire show next message
+        }
+    }
+
+    void ShowDialogue()
+    {
+        if (!AllTextShown) // If still writing message stop, show whole message and set flag
+        {
+            textBox.text = dialogues[number].message;
+            StopAllCoroutines();
+            AllTextShown = true;
+            characterWritten.Stop();
+            return;
+        }
+        number++;
+        if (number >= dialogues.Length) {
+            SceneManager.LoadScene(1); // If done with messages, then load next scene
+            return;
+        }
+        StopAllCoroutines();
+        message = "";
+        StartCoroutine("ShowLetter");
+        nameBox.text = dialogues[number].speaker;
+        speaker.sprite = dialogues[number].speakreSprite; //setup all basic info about speaker
+    }
+
+    string message;
+    IEnumerator ShowLetter()
+    {
+        AllTextShown = false;
+        characterWritten.Play(); // play looping sound
+        for (int i = 0; i < dialogues[number].message.Length; i++)
+        {
+            message += dialogues[number].message[i]; // add enxt letter to string and show
+            textBox.text = message;
+            yield return new WaitForSeconds(0.02f);
+        }
+        AllTextShown = true;
+        characterWritten.Stop(); // stop looping sound
+    }
+
+}
+
+
+[MusicManager]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class MusicManager : MonoBehaviour
+{
+    public static MusicManager musicManager;
+
+    private void Awake()
+    {
+        if (musicManager == null) musicManager = this;
+        else Destroy(gameObject);
+    }
+
+    void Start()
+    {
+        DontDestroyOnLoad(gameObject);
+    }
+}
+
+[Game Manager]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+
+public class GameManager : MonoBehaviour
+{
+    public static GameManager gameManager;
+
+    public float timer;
+
+    CanvasController canvas;
+
+    private void Awake()
+    {
+        if (gameManager == null) gameManager = this;
+        else Destroy(gameManager);
+    }
+
+    private void Start()
+    {
+        canvas = CanvasController.canvasController;
+        Time.timeScale = 1; //resterat time scale
+    }
+
+
+    private void Update()
+    {
+        timer += Time.deltaTime; // update clock
+    }
+
+
+    public void EndGame(bool win)
+    {
+        if(win)
+        {
+            float bestTime = PlayerPrefs.GetFloat("BestTime");
+            if ((bestTime != 0 && bestTime > timer) || bestTime == 0) PlayerPrefs.SetFloat("BestTime", timer);// update bext time
+        }
+        canvas.ShowEnding(win, timer); // show end screen
+        Time.timeScale = 0; // stop gameplay loop
+    }
+
+
+
+    public void Reload()
+    {
+        SceneManager.LoadScene(1);
+    }
+
+    public void Quit()
+    {
+        SceneManager.LoadScene(0);
+    }
+}
+
+
+[WalkerScript]
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(Rigidbody2D))]
+public class WalkerScript : MonoBehaviour, EnemyInterface
+{
+    [SerializeField]
+    int maxHp;
+    [SerializeField]
+    int hp;
+    [SerializeField]
+    float speed;
+    [SerializeField]
+    int damge;
+    [SerializeField]
+    float knockbackDuration;
+
+    [SerializeField]
+    Transform target;
+    Rigidbody2D myBody;
+    SpriteRenderer myRenderer;
+
+    Animator myanimator;
+    private void Start()
+    {
+        myBody = transform.GetComponent<Rigidbody2D>();
+        myRenderer = transform.GetComponent<SpriteRenderer>();
+        myanimator = transform.GetComponent<Animator>();
+    }
+
+    private void FixedUpdate()
+    {
+        if (knockbackDuration > 0) return;
+        if (target != null)
+        {
+            myBody.velocity = new Vector2(target.transform.position.x - transform.position.x, 0).normalized * speed * Time.fixedDeltaTime + new Vector2(0, myBody.velocity.y); //walk towards target
+        }
+    }
+
+    private void Update()
+    {
+        if (transform.position.x > target.transform.position.x) myRenderer.flipX = true;
+        else myRenderer.flipX = false; // check which way to flip sprite
+        knockbackDuration -= Time.deltaTime;
+    }
+
+
+    public GameObject getEnemy()
+    {
+        return gameObject;
+    }
+
+    public Vector2 getPosition()
+    {
+        return transform.position;
+    }
+
+    public float Hit(int damage)
+    {
+        TakeDamage(damage);
+        return damage;
+    }
+
+    public void SetTarget(Transform target)
+    {
+        this.target = target;
+    }
+
+    void TakeDamage(int ammount)
+    {
+        hp -= ammount;
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor"); // Change color to red and after 0.2f change it back
+        Invoke("NormalColor", 0.2f);
+        if (hp <= 0)
+        {
+            SpawnerController.spawnerController.DestroyEnemy(this); // Call Spawner that im destoryed, play animation and destroy me after 0.2f
+            Invoke("DestroyMe", 0.2f);
+            myanimator.SetTrigger("Death");
+            speed = 0;
+        }
+    }
+
+    void DestroyMe()
+    {
+        Destroy(gameObject);
+    }
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+
+    public int DealtDamage()
+    {
+        TakeDamage(hp);
+        return damge;
+    }
+
+    public void Knockback(Vector2 strength)
+    {
+        knockbackDuration = 0.5f; // Knockback strength and duration
+        myBody.AddForce(strength);
+    }
+}
+
+[BansheScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class BansheScript : MonoBehaviour, EnemyInterface
+{
+    [SerializeField]
+    int maxHp;
+    [SerializeField]
+    int hp;
+    [SerializeField]
+    float speed;
+    [SerializeField]
+    int damage;
+
+    [SerializeField]
+    float drainRange;
+    [SerializeField]
+    float drainCooldown;
+    float drainCooldownRemian;
+    [SerializeField]
+    float knockbackDuration;
+
+
+    [SerializeField]
+    Transform target;
+    Rigidbody2D myBody;
+    SpriteRenderer myRenderer;
+
+    PlayerControllerScript player;
+
+    Animator myanimator;
+
+    List<InteractableInterface> interactableInRange = new List<InteractableInterface>();
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if(collision.tag =="Interactable")
+        {
+            interactableInRange.Add(collision.GetComponent<InteractableInterface>()); // Add object to drain target list
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D collision)
+    {
+        if (collision.tag == "Interactable")
+        {
+            interactableInRange.Remove(collision.GetComponent<InteractableInterface>()); // Remove object from drain target list
+        }
+    }
+
+    private void Start()
+    {
+        player = PlayerControllerScript.playerController;
+        myBody = transform.GetComponent<Rigidbody2D>();
+        myRenderer = transform.GetComponent<SpriteRenderer>();
+        myanimator = transform.GetComponent<Animator>();
+        InvokeRepeating("DrainPower", 0, 3); // Call drain function every 3 seconds
+    }
+
+    private void FixedUpdate()
+    {
+        if (knockbackDuration > 0) return;
+        if (target != null)
+        {
+            myBody.velocity = new Vector2(target.transform.position.x - transform.position.x, 0).normalized * speed * Time.fixedDeltaTime;
+        }
+    }
+
+    private void Update()
+    {
+        if(Vector2.Distance(player.transform.position, transform.position) <= drainRange && drainCooldownRemian <= 0) //if player in range remove all battery charges
+        {
+            player.LooseAllCharges();
+            drainCooldownRemian = drainCooldown;
+        }
+        if (transform.position.x > target.transform.position.x) myRenderer.flipX = false;
+        else myRenderer.flipX = true;
+
+        drainCooldownRemian -= Time.deltaTime;
+        knockbackDuration -= Time.deltaTime;
+    }
+
+
+    void DrainPower()
+    {
+        foreach(InteractableInterface inter in interactableInRange)
+        {
+            if (inter.Drain(1) > 0) // drain all devices, and restore hp for all drained
+            {
+                myRenderer.color = Color.green;
+                CancelInvoke("NormalColor");
+                Invoke("NormalColor", 0.2f);
+                hp += Mathf.CeilToInt(maxHp * 0.05f);
+                hp = Mathf.Clamp(hp, 0, maxHp);
+            }
+        }
+    }
+
+
+    public GameObject getEnemy()
+    {
+        return gameObject;
+    }
+
+    public Vector2 getPosition()
+    {
+        return transform.position;
+    }
+
+    public float Hit(int damage)
+    {
+        TakeDamage(damage);
+        return damage;
+    }
+
+    public void SetTarget(Transform target)
+    {
+        this.target = target;
+    }
+
+    void TakeDamage(int ammount)
+    {
+        hp -= ammount;
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor");
+        Invoke("NormalColor", 0.2f);
+        if (hp <= 0)
+        {
+            SpawnerController.spawnerController.DestroyEnemy(this);
+            Invoke("DestroyMe", 0.2f);
+            myanimator.SetTrigger("Death");
+            speed = 0;
+        }
+    }
+
+    void DestroyMe()
+    {
+        Destroy(gameObject);
+    }
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+
+    public int DealtDamage()
+    {
+        TakeDamage(hp);
+        return damage;
+    }
+
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.cyan;
+        Gizmos.DrawWireSphere(transform.position, drainRange);
+    }
+
+    public void Knockback(Vector2 strength)
+    {
+        knockbackDuration = 0.1f; // set knockback strenght and duration
+        myBody.AddForce(strength * 0.2f);
+    }
+}
+
+[WaveSO]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[CreateAssetMenu(fileName = "Wave", menuName = "ScriptableObjects/SpawnManagerScriptableObject", order = 1)]
+public class WaveSO : ScriptableObject
+{
+    public int minCharge;
+    public int maxCharge;
+
+    public float spawnDelay;
+    public float nextWaveDelay;
+
+    public int walkerCount;
+    public int tankCount;
+    public int droidCount;
+    public int bansheCount;
+
+    public Vector2 tentacleSpawnDelay;
+}
+
+[TentacleScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(Animator))]
+public class TentacleScript : MonoBehaviour, EnemyInterface
+{
+    Animator myAnimator;
+    SpriteRenderer myRenderer;
+    [SerializeField]
+    int maxHp;
+    int hp;
+
+    [SerializeField]
+    GameObject bug;
+
+    [SerializeField]
+    float spawnStartDelay;
+    [SerializeField]
+    float spawnDelay;
+    [SerializeField]
+    Transform enemyTransform;
+    [SerializeField]
+    Transform firstTarget;
+
+    Animator myanimator;
+
+    private void Awake()
+    {
+        myAnimator = gameObject.GetComponent<Animator>();
+        myRenderer = gameObject.GetComponent<SpriteRenderer>();
+        myanimator = transform.GetComponent<Animator>();
+    }
+
+    public void OnEnable()
+    {
+        myAnimator.SetTrigger("Appear");
+        StartCoroutine("StartSpawning");
+        hp = maxHp;
+    }
+
+    private void OnDisable()
+    {
+        StopAllCoroutines(); //Stop all coroutines to avoid then stacing
+    }
+
+    public float Hit(int damage)
+    {
+        Damage(damage);
+        return damage;
+    }
+
+    public Vector2 getPosition()
+    {
+        return transform.position;
+    }
+
+    public GameObject getEnemy()
+    {
+        return gameObject;
+    }
+
+    public void SetTarget(Transform target)
+    {
+
+    }
+
+    IEnumerator StartSpawning()
+    {
+        yield return new WaitForSeconds(spawnStartDelay); //spawn bugs after x seconds
+        while(true)
+        {
+            EnemyInterface temp = Instantiate(bug, transform.position, Quaternion.identity, enemyTransform).GetComponent<EnemyInterface>();
+            temp.SetTarget(firstTarget);
+            yield return new WaitForSeconds(spawnDelay);
+        }
+    }
+
+    void Damage(int ammount)
+    {
+        hp -= ammount;
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor");
+        Invoke("NormalColor", 0.2f);
+        if (hp <= 0)
+        {
+            Invoke("DeactivateMe", 0.2f);
+            myanimator.SetTrigger("Death");
+        }
+    }
+
+    void DeactivateMe()
+    {
+        gameObject.SetActive(false);
+    }
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+
+    public int DealtDamage()
+    {
+        return 0;
+    }
+
+    public void Knockback(Vector2 strength)
+    {
+
+    }
+}
+
+
+[TankScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class TankScript : MonoBehaviour, EnemyInterface
+{
+    [SerializeField]
+    int maxHp;
+    [SerializeField]
+    int hp;
+    [SerializeField]
+    float speed;
+    [SerializeField]
+    int damage;
+
+    [SerializeField]
+    float baseSpeed;
+    [SerializeField]
+    float maxSpeed;
+    [SerializeField]
+    float knockbackDuration;
+
+    [SerializeField]
+    Transform target;
+    Rigidbody2D myBody;
+    SpriteRenderer myRenderer;
+
+    Animator myanimator;
+
+    private void Start()
+    {
+        myBody = transform.GetComponent<Rigidbody2D>();
+        myRenderer = transform.GetComponent<SpriteRenderer>();
+        myanimator = transform.GetComponent<Animator>();
+    }
+
+    private void FixedUpdate()
+    {
+        if (knockbackDuration > 0) return;
+        if (target != null)
+        {
+            myBody.velocity = new Vector2(target.transform.position.x - transform.position.x, 0).normalized * speed * Time.fixedDeltaTime + new Vector2(0, myBody.velocity.y);
+        }
+    }
+
+    private void Update()
+    {
+        if(speed != 0) speed = Mathf.Lerp(baseSpeed, maxSpeed, 1 - ((float)hp / (float)maxHp)); // more damage taken more speed
+        if (transform.position.x > target.transform.position.x) myRenderer.flipX = true;
+        else myRenderer.flipX = false;
+        knockbackDuration -= Time.deltaTime;
+    }
+
+
+    public GameObject getEnemy()
+    {
+        return gameObject;
+    }
+
+    public Vector2 getPosition()
+    {
+        return transform.position;
+    }
+
+    public float Hit(int damage)
+    {
+        TakeDamage(damage);
+        return damage;
+    }
+
+    public void SetTarget(Transform target)
+    {
+        this.target = target;
+    }
+
+    void TakeDamage(int ammount)
+    {
+        hp -= ammount;
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor");
+        Invoke("NormalColor", 0.2f);
+        if (hp <= 0)
+        {
+            SpawnerController.spawnerController.DestroyEnemy(this);
+            Invoke("DestroyMe", 0.2f);
+            myanimator.SetTrigger("Death");
+            speed = 0;
+        }
+    }
+
+    void DestroyMe()
+    {
+        Destroy(gameObject);
+    }
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+    public int DealtDamage()
+    {
+        TakeDamage(hp);
+        return damage;
+    }
+
+    public void Knockback(Vector2 strength)
+    {
+        knockbackDuration = 0.5f;
+        myBody.AddForce(strength);
+    }
+}
+
+
+[SpawnerController]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class SpawnerController : MonoBehaviour
+{
+    public static SpawnerController spawnerController;
+
+    public static List<EnemyInterface> enemiesPresent;
+
+
+    [SerializeField]
+    EyeScript eye;
+    [SerializeField]
+    AudioSource kraken;
+
+    [SerializeField]
+    TentacleScript[] tentacles;
+
+    [SerializeField]
+    int chargeToSpawnKraken;
+    [SerializeField]
+    Vector2 timeBetweenSpawns;
+    bool krakenActive;
+    bool krakenEntranceDone;
+    float nextTentacleSpawn;
+
+    [SerializeField]
+    GameObject walkerPrefab;
+    [SerializeField]
+    GameObject droidPrefab;
+    [SerializeField]
+    GameObject tankPrefab;
+    [SerializeField]
+    GameObject banshePrefab;
+
+    [SerializeField]
+    ParticleSystem rubble;
+
+    [SerializeField]
+    Transform[] anchor;
+
+    [SerializeField]
+    Transform enemyParrent;
+
+    [SerializeField]
+    Transform[] firstTarget;
+
+    [SerializeField]
+    WaveSO[] waves;
+
+    WaveSO currentWave;
+
+    float currentDelay;
+
+    int spawnedWalkers;
+    int spawnedDroids;
+    int spawnedTanks;
+    int spawnedBanshes;
+
+
+    int enemiesToSpawn;
+
+    bool cooldown = false;
+    BombScript bomb;
+
+
+    private void Awake()
+    {
+        if (spawnerController == null) spawnerController = this;
+        else Destroy(gameObject);
+
+        enemiesPresent = new List<EnemyInterface>(); //reset all spawned enemies list
+    }
+
+    private void Start()
+    {
+        bomb = BombScript.bombScript;
+    }
+
+    public void DestroyEnemy(EnemyInterface enemy) //remove enemy from list
+    {
+        enemiesPresent.Remove(enemy);
+    }
+
+    private void Update()
+    {
+        if(!cooldown && currentDelay <= 0)
+        {
+            SpawnNextEnemy(); // spawn next wave
+            currentDelay = currentWave.spawnDelay;
+        }
+        currentDelay -= Time.deltaTime;
+
+        if(krakenActive && nextTentacleSpawn <= 0) //spawn next tentacle
+        {
+            TentacleScript tentacle = tentacles[Random.Range(0, tentacles.Length)];
+            if(!tentacle.isActiveAndEnabled)
+            {
+                tentacle.gameObject.SetActive(true);
+            }
+            nextTentacleSpawn = Random.Range(timeBetweenSpawns.x, timeBetweenSpawns.y);
+        }
+        nextTentacleSpawn -= Time.deltaTime;
+    }
+
+
+    void GetWave()
+    {
+        List<WaveSO> avalibleWaves = new List<WaveSO>();
+
+        int charge = bomb.GetCharge();
+
+        if (charge >= chargeToSpawnKraken && !krakenEntranceDone) // awaken kraken if not already spawned
+        {
+            InvokeRepeating("AwakenKraken", 0, Random.Range(60, 120));
+            krakenEntranceDone = true;
+        }
+
+        foreach (WaveSO wave in waves) //check which wave is appropriate
+        {
+            if (wave.minCharge <= charge && wave.maxCharge > charge)
+            {
+                avalibleWaves.Add(wave);
+            }
+        }
+        currentWave = avalibleWaves[Random.Range(0, avalibleWaves.Count)]; // get random wave from selected
+
+        timeBetweenSpawns = currentWave.tentacleSpawnDelay;
+        spawnedWalkers = 0;
+        spawnedDroids = 0;
+        spawnedTanks = 0;
+        spawnedBanshes = 0;
+        enemiesToSpawn = currentWave.walkerCount + currentWave.bansheCount + currentWave.droidCount + currentWave.tankCount; //set all values
+        currentDelay = currentWave.spawnDelay;
+        cooldown = false;
+    }
+
+    void AwakenKraken() // shake camera, play particles and activate eye
+    {
+        CameraEffects.cameraEffects.StartCameraShake(3);
+        krakenActive = true;
+        eye.Activate();
+        rubble.Play();
+        kraken.Play();
+    }
+
+    void SpawnNextEnemy()
+    {
+        if (cooldown) return;
+        if (currentWave == null) GetWave(); //If none left to spawn, get new wave
+        else if (enemiesToSpawn == 0)
+        {
+            Invoke("GetWave", currentWave.nextWaveDelay);
+            cooldown = true;
+            return;
+        }
+
+        bool spawned = false;
+        while(!spawned)
+        {
+            int rand = Random.Range(0, 4), door = Random.Range(0, anchor.Length); //get random starting position and random mob
+            GameObject temp = gameObject; // >:(
+            switch (rand)
+            {
+                case 0:
+                    if (spawnedWalkers < currentWave.walkerCount) // if no more mob left to spawn get next random one
+                    {
+                        temp = Instantiate(walkerPrefab, anchor[door].position, Quaternion.identity, enemyParrent);
+                        spawnedWalkers++;
+                        spawned = true;
+                    }
+                    break;
+                case 1:
+                    if (spawnedDroids < currentWave.droidCount)
+                    {
+                        temp = Instantiate(droidPrefab, anchor[door].position, Quaternion.identity, enemyParrent);
+                        spawnedDroids++;
+                        spawned = true;
+                    }
+                    break;
+                case 2:
+                    if (spawnedTanks < currentWave.tankCount)
+                    {
+                        temp = Instantiate(tankPrefab, anchor[door].position, Quaternion.identity, enemyParrent);
+                        spawnedTanks++;
+                        spawned = true;
+                    }
+                    break;
+                case 3:
+                    if (spawnedBanshes < currentWave.bansheCount)
+                    {
+                        temp = Instantiate(banshePrefab, anchor[door].position, Quaternion.identity, enemyParrent);
+                        spawnedBanshes++;
+                        spawned = true;
+                    }
+                    break;
+            }
+
+            if (spawned)
+            {
+                EnemyInterface tempInterface = temp.GetComponent<EnemyInterface>(); // set mob first target and add it to the list
+                tempInterface.SetTarget(firstTarget[door]);
+                enemiesPresent.Add(tempInterface);
+                enemiesToSpawn--;
+                break;
+            }
+        }
+
+    }
+}
+
+[EyeScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class EyeScript : MonoBehaviour
+{
+    [SerializeField]
+    bool active;
+    bool linger;
+
+    [SerializeField]
+    float speed;
+
+    [SerializeField]
+    Transform[] anchors;
+
+    [SerializeField]
+    Transform pupil;
+
+    [SerializeField]
+    float maxFollow;
+
+    Transform player;
+    Transform target;
+
+    private void Start()
+    {
+        GetDestination();
+        player = PlayerControllerScript.playerController.transform;
+    }
+
+    private void Update()
+    {
+        if(active)
+        {
+            if(linger) // eye linger for a moment after reaching its destination
+            {
+                transform.position = Vector2.MoveTowards(transform.position, (Vector2)target.position + new Vector2(0, Mathf.Sin(Time.time)), speed * Time.deltaTime);
+            }
+            else if (Vector2.Distance(transform.position, target.position) < 0.2f) {
+                linger = true;
+                Invoke("GetDestination", Random.Range(3,6));
+            }
+            else transform.position = Vector2.MoveTowards(transform.position, target.position, speed * Time.deltaTime);
+
+            pupil.transform.position = (player.position - transform.position).normalized * maxFollow + transform.position; // pupil follows player
+
+        }
+    }
+
+
+    void GetDestination() // choose random next position fo follow
+    {
+        target = anchors[Random.Range(0, anchors.Length)];
+        linger = false;
+    }
+
+    public void Activate()
+    {
+        active = true;
+    }
+}
+
+
+[EnemyInterface]
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public interface EnemyInterface
+{
+    float Hit(int damage); // damage enemy
+    Vector2 getPosition(); // get its position
+    GameObject getEnemy(); // get its object
+    void Knockback(Vector2 strength); // knockback it
+
+    int DealtDamage(); // Get its damage to bomb
+
+    void SetTarget(Transform target); // set its next target to follow
+}
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public interface EnemyInterface
+{
+    float Hit(int damage); // damage enemy
+    Vector2 getPosition(); // get its position
+    GameObject getEnemy(); // get its object
+    void Knockback(Vector2 strength); // knockback it
+
+    int DealtDamage(); // Get its damage to bomb
+
+    void SetTarget(Transform target); // set its next target to follow
+}
+
+[DroidScript]
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class DroidScript : MonoBehaviour, EnemyInterface
+{
+    [SerializeField]
+    int maxHp;
+    [SerializeField]
+    int hp;
+    [SerializeField]
+    float speed;
+    [SerializeField]
+    int damage;
+    [SerializeField]
+    float knockbackDuration;
+
+    [SerializeField]
+    Transform target;
+    Rigidbody2D myBody;
+    SpriteRenderer myRenderer;
+
+    Animator myanimator;
+
+    private void Start()
+    {
+        myBody = transform.GetComponent<Rigidbody2D>();
+        myRenderer = transform.GetComponent<SpriteRenderer>();
+        myanimator = transform.GetComponent<Animator>();
+    }
+
+    private void FixedUpdate()
+    {
+        if (knockbackDuration > 0) return;
+        if (target != null)
+        {
+            myBody.velocity = new Vector2(target.transform.position.x - transform.position.x, 0).normalized * speed * Time.fixedDeltaTime;
+        }
+    }
+
+    private void Update()
+    {
+        if (transform.position.x > target.transform.position.x) myRenderer.flipX = false;
+        else myRenderer.flipX = true;
+        knockbackDuration -= Time.deltaTime;
+    }
+
+
+    public GameObject getEnemy()
+    {
+        return gameObject;
+    }
+
+    public Vector2 getPosition()
+    {
+        return transform.position;
+    }
+
+    public float Hit(int damage)
+    {
+        TakeDamage(damage);
+        return damage;
+    }
+
+    public void SetTarget(Transform target)
+    {
+        this.target = target;
+    }
+
+    void TakeDamage(int ammount)
+    {
+        hp -= ammount;
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor");
+        Invoke("NormalColor", 0.2f);
+        if (hp <= 0)
+        {
+            SpawnerController.spawnerController.DestroyEnemy(this);
+            Invoke("DestroyMe", 0.2f);
+            myanimator.SetTrigger("Death");
+            speed = 0;
+        }
+    }
+
+    void DestroyMe()
+    {
+        Destroy(gameObject);
+    }
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+
+    public int DealtDamage()
+    {
+        TakeDamage(hp);
+        return damage;
+    }
+
+    public void Knockback(Vector2 strength)
+    {
+        knockbackDuration = 0.25f;
+        myBody.AddForce(strength * 0.5f);
+    }
+}
+
+
+[GunBase and all guns]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public abstract class GunBase
+{
+    protected Transform barrel;
+    protected GameObject prefab;
+    protected PlayerControllerScript player;
+    protected float fireDelay;
+    protected float nextShot;
+    protected GunBase(GameObject prefab, PlayerControllerScript player) // constructor
+    {
+        this.prefab = prefab;
+        this.player = player;
+    }
+    public abstract bool Shoot();
+}
+
+
+public class Pistol : GunBase
+{
+    public Pistol(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.5f;
+    }
+
+    override public bool Shoot()
+    {
+        if(nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0); // Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+
+public class SMG : GunBase
+{
+    public SMG(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.15f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0);// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+public class AR : GunBase
+{
+    public AR(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.25f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0);// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+public class Shotgun : GunBase
+{
+    public Shotgun(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.5f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            for(int i = 0; i < 8; i++)player.InstantiateBullet(prefab, Random.Range(-5,5));// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+public class Sniper : GunBase
+{
+    public Sniper(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.7f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0);// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+public class RPG : GunBase
+{
+    public RPG(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 1.2f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0);// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+
+}
+
+
+public class RGP : GunBase
+{
+    public RGP(GameObject prefab, PlayerControllerScript player) : base(prefab, player)
+    {
+        fireDelay = 0.6f;
+    }
+
+    override public bool Shoot()
+    {
+        if (nextShot <= Time.time)
+        {
+            player.InstantiateBullet(prefab, 0);// Call player to create bullet with set recoil
+            nextShot = Time.time + fireDelay;
+            return true;
+        }
+        return false;
+    }
+}
+
+[BulletScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class BulletScript : MonoBehaviour
+{
+    [SerializeField]
+    float speed;
+    [SerializeField]
+    int damage;
+    [SerializeField]
+    int penetration;
+    [SerializeField]
+    bool exploding;
+    [SerializeField]
+    float explosionRadius;
+    bool exploded;
+    [SerializeField]
+    float knockbackStrength;
+    [SerializeField]
+    float maxDistance;
+    float distance;
+
+    [SerializeField]
+    LayerMask notToHit;
+
+    [SerializeField]
+    AudioSource shoot;
+
+    [SerializeField]
+    AudioSource explodeSound;
+
+    [SerializeField]
+    Animator animator;
+
+    Vector2 prevPos;
+
+    List<GameObject> ignore = new List<GameObject>(); // list af all object to ignore if penetration >1
+
+
+    private void Start()
+    {
+        prevPos = transform.position;
+        shoot.pitch = Random.Range(-0.1f, 0.1f) + shoot.pitch; // after spawning play gunshot noise
+        shoot.Play();
+    }
+
+    void Update()
+    {
+        if (exploded) return; // if is explosive and playing explode animation
+        transform.position += transform.right * speed * Time.deltaTime; // move bullet
+
+
+       RaycastHit2D hit = Physics2D.Linecast(prevPos, transform.position, ~notToHit); // get all object in trajectory
+
+        if(hit)
+        {
+            EnemyInterface hitInterface = hit.transform.GetComponent<EnemyInterface>();
+
+            if (hitInterface != null && !ignore.Contains(hit.transform.gameObject))// if hit something first time and it has a EnemyInterface damage it and if explosive then explode
+            {
+                hitInterface.Hit(damage);
+                if (exploding) Explode();
+                ignore.Add(hit.transform.gameObject); // add to ignored list
+                penetration--; // decrease penetration
+            }
+            if (penetration <= 0 && !exploding) Destroy(gameObject); // if not explosive and penetration is 0 then destory
+            if (exploding) Explode(); //if its explosive, then explode
+        }
+        distance += Mathf.Abs(transform.position.x - prevPos.x); // add to traveled distance
+        if (distance > maxDistance) // if at max range destroy if not explosive, or explode
+        {
+            if (exploding) Explode();
+            else Destroy(gameObject);
+        }
+        prevPos = transform.position;
+    }
+
+
+
+    void Explode()
+    {
+        exploded = true;
+        explodeSound.Play(); //play animation and sound
+        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, explosionRadius, ~notToHit);
+        animator.SetTrigger("Explode");
+        Destroy(gameObject, animator.GetCurrentAnimatorStateInfo(0).length - 0.6f); //destory after animation
+        speed = 0;
+        foreach (Collider2D hit in hits)
+        {
+            EnemyInterface hitInterface = hit.transform.GetComponent<EnemyInterface>(); //cast circle, damage all enemies inside and knockback them
+            if (hitInterface != null)
+            {
+                hitInterface.Hit(damage);
+                hitInterface.Knockback((hitInterface.getPosition() - (Vector2)transform.position).normalized * knockbackStrength);
+            }
+        }
+
+    }
+}
+
+[playerController]
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+
+[RequireComponent(typeof(Rigidbody2D), typeof(SpriteRenderer))]
+public class PlayerControllerScript : MonoBehaviour
+{
+    //singleton
+    public static PlayerControllerScript playerController;
+
+
+    //movment variables
+    [SerializeField]
+    float maxSpeed;
+    [SerializeField]
+    float jumpForce;
+    bool isFloating;
+    bool isFacingRight;
+
+    //battery variables
+    public int Charges {
+        get
+        {
+            return currentCharges;
+        }
+        set
+        {
+            currentCharges = value;
+            switch(currentCharges) //get gun based on charge level
+            {
+                case 0:
+                    gun = new Pistol(PistolBulletPrefab, this);
+                    break;
+                case 1:
+                    gun = new SMG(SMGBulletPrefab, this);
+                    break;
+                case 2:
+                    gun = new AR(ARBulletPrefab, this);
+                    break;
+                case 3:
+                    gun = new Shotgun(ShotgunBulletPrefab, this);
+                    break;
+                case 4:
+                    gun = new Sniper(SniperBulletPrefab, this);
+                    break;
+                case 5:
+                    gun = new RPG(RPGBulletPrefab, this);
+                    break;
+                case 6:
+                    gun = new RGP(RGPBulletPrefab, this);
+                    break;
+            }
+        }
+    }
+    private int currentCharges;
+    public int maxCharges;
+
+    //use variables
+    [SerializeField]
+    float useRadius;
+
+    //gun
+    GunBase gun;
+    [SerializeField]
+    GameObject PistolBulletPrefab;
+    [SerializeField]
+    GameObject SMGBulletPrefab;
+    [SerializeField]
+    GameObject ARBulletPrefab;
+    [SerializeField]
+    GameObject ShotgunBulletPrefab;
+    [SerializeField]
+    GameObject SniperBulletPrefab;
+    [SerializeField]
+    GameObject RPGBulletPrefab;
+    [SerializeField]
+    GameObject RGPBulletPrefab;
+
+
+    //references
+    Rigidbody2D myBody;
+    SpriteRenderer myRenderer;
+    Animator myAnimator;
+    [SerializeField]
+    Transform floorCheck;
+    [SerializeField]
+    GameObject barrel;
+    [SerializeField]
+    Transform flashlight;
+    [SerializeField]
+    GameObject muzzleFlesh;
+
+    //layers masks
+    [SerializeField]
+    LayerMask ground;
+
+    //additional variables
+    [SerializeField]
+    Vector2 groundCheckSize;
+
+
+
+    private void Awake()
+    {
+        if (playerController == null) playerController = this;
+        else Destroy(gameObject);
+
+        myBody = GetComponent<Rigidbody2D>();
+        myRenderer = GetComponent<SpriteRenderer>();
+        myAnimator = GetComponent<Animator>();
+        myBody.collisionDetectionMode = CollisionDetectionMode2D.Continuous; // Not sure about performance
+
+        gun = new Pistol(PistolBulletPrefab, this); // start with pistol
+    }
+
+
+    void Update()
+    {
+        #region Inputs
+        if (Input.GetButtonDown("Jump") && !isFloating)
+        {
+            myBody.AddForce(Vector2.up * jumpForce); // add force to jump
+        }
+
+        if(Input.GetButton("Fire1"))
+        {
+            Fire();
+        }
+
+        if(Input.GetButtonDown("Fire2"))
+        {
+            Action();
+        }
+
+        #endregion
+
+        if (isFacingRight)
+        {
+            myRenderer.flipX = true;
+            barrel.transform.localPosition = new Vector3(1f, barrel.transform.localPosition.y, 0);
+            flashlight.rotation = Quaternion.Euler(0, 0, -90); // flip sprite and barrel if needed
+        }
+        else
+        {
+            myRenderer.flipX = false;
+            barrel.transform.localPosition = new Vector3(-1f, barrel.transform.localPosition.y, 0);
+            flashlight.rotation = Quaternion.Euler(0, 0, 90);
+        }
+
+
+        myAnimator.SetFloat("SpeedX", Math.Abs(myBody.velocity.x)); // set animator values
+        myAnimator.SetFloat("SpeedY", Math.Abs(myBody.velocity.y));
+        CheciIfFlying();
+    }
+
+
+    private void FixedUpdate()
+    {
+        MovePlayer();
+    }
+
+    void CheciIfFlying()
+    {
+        Collider2D[] hits = Physics2D.OverlapBoxAll(floorCheck.position, groundCheckSize, 0, ground); //check if standing on a platform
+
+        if (hits.Length != 0) isFloating = false;
+        else isFloating = true;
+    }
+
+    void MovePlayer()
+    {
+        float horizontal = Input.GetAxis("Horizontal");
+        if (horizontal > 0) isFacingRight = true;
+        else if(horizontal < 0) isFacingRight = false;
+        myBody.velocity = new Vector2(horizontal * maxSpeed * Time.fixedDeltaTime, myBody.velocity.y); // move player on x axis based on horizontal input axis
+    }
+
+
+    void Fire()
+    {
+        if(gun.Shoot()) // if can shoot, show muzzle flash, and hide it after 0.1f
+        {
+            muzzleFlesh.SetActive(true);
+            Invoke("HideMuzzleFlesh", 0.1f);
+        }
+    }
+
+    void HideMuzzleFlesh()
+    {
+        muzzleFlesh.SetActive(false);
+    }
+
+    public void InstantiateBullet(GameObject prefab, float offset) // Instantiate bullet facing forward with set recoil
+    {
+        Instantiate(prefab, barrel.transform.position, isFacingRight ? Quaternion.Euler(0, 0, 0 + offset) : Quaternion.Euler(0, 0, 180 + offset));
+    }
+
+    private void Action() // check if any interactable objects near and activate them
+    {
+        Collider2D[] hits = Physics2D.OverlapCircleAll(transform.position, useRadius);
+
+        foreach(Collider2D hit in hits)
+        {
+            if(hit.transform.tag == "Interactable")
+            {
+                Charges -= hit.GetComponent<InteractableInterface>().PowerUp(Charges);
+            }
+        }
+    }
+
+
+    public void GainCharge() // if not at full charges, then gain one
+    {
+        if (Charges < maxCharges) Charges++;
+    }
+
+    public void LooseAllCharges()
+    {
+        Charges = 0;
+    }
+
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireCube(floorCheck.transform.position, groundCheckSize);
+    }
+}
+
+[MainMenuController]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.UI;
+
+public class MainMenuController : MonoBehaviour
+{
+
+    [SerializeField]
+    Text bestTime;
+    [SerializeField]
+    GameObject timeLabel;
+
+    private void Start()
+    {
+        float time = PlayerPrefs.GetFloat("BestTime"); // get and show best time
+        if (time != 0)
+        {
+            float minutes = Mathf.Floor(time / 60);
+            float seconds = Mathf.Floor(time % 60);
+            float miliSeconds = Mathf.Floor((time - (seconds + minutes * 60)) * 100);
+            bestTime.text = (minutes < 10 ? "0" + minutes.ToString() : minutes.ToString()) + ":" + (seconds < 10 ? "0" + seconds.ToString() : seconds.ToString()) + ":" + (miliSeconds < 10 ? "0" + miliSeconds.ToString() : miliSeconds.ToString());
+        }
+        else
+        {
+            bestTime.text = "--:--:--";
+        }
+    }
+
+
+    public void Play()
+    {
+        SceneManager.LoadScene(2);
+    }
+
+    public void Quit()
+    {
+        Application.Quit();
+    }
+}
+
+[CanvasController]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+public class CanvasController : MonoBehaviour
+{
+    public static CanvasController canvasController;
+
+    [SerializeField]
+    Image batteryFill;
+    [SerializeField]
+    Text timer;
+
+    [SerializeField]
+    GameObject winEnd;
+    [SerializeField]
+    GameObject loseEnd;
+
+    [SerializeField]
+    Text bestTime;
+    [SerializeField]
+    Text currentTime;
+    [SerializeField]
+    Sprite[] gunIcons;
+    [SerializeField]
+    Image gunIconImage;
+
+
+    private PlayerControllerScript playerController;
+    private GameManager gm;
+
+    private void Awake()
+    {
+        if (canvasController == null) canvasController = this;
+        else Destroy(gameObject);
+    }
+
+    private void Start()
+    {
+        playerController = PlayerControllerScript.playerController;
+        gm = GameManager.gameManager;
+    }
+
+    void Update()
+    {
+        gunIconImage.sprite = gunIcons[playerController.Charges]; // show icon of currently held gun
+        batteryFill.fillAmount = ((float)playerController.Charges / (float)playerController.maxCharges) * 0.8f; // show battery charge
+        timer.text = GetStringFromTime(gm.timer); // update timer
+    }
+
+    public void ShowEnding(bool win, float time) //if game ends, check if won and compare times
+    {
+        if(win)
+        {
+            float bestRecordedTime = PlayerPrefs.GetFloat("BestTime");
+            if(time < bestRecordedTime)
+            {
+                currentTime.text = GetStringFromTime(time);
+                bestTime.text = currentTime.text;
+            }
+            else
+            {
+                currentTime.text = GetStringFromTime(time);
+                bestTime.text = GetStringFromTime(bestRecordedTime);
+            }
+            winEnd.SetActive(true);
+        }
+        else
+        {
+            loseEnd.SetActive(true);
+        }
+    }
+
+    public string GetStringFromTime(float time) // get string from timer float
+    {
+        float minutes = Mathf.Floor(time / 60);
+        float seconds = Mathf.Floor(time % 60);
+        float miliSeconds = Mathf.Floor((time - (seconds + minutes * 60)) * 100);
+        return (minutes < 10 ? "0" + minutes.ToString() : minutes.ToString()) + ":" + (seconds < 10 ? "0" + seconds.ToString() : seconds.ToString()) + ":" + (miliSeconds < 10 ? "0" + miliSeconds.ToString() : miliSeconds.ToString());
+    }
+
+}
+
+[CameraEffects]
+
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class CameraEffects : MonoBehaviour
+{
+
+    public static CameraEffects cameraEffects;
+    [SerializeField]
+    float strength;
+    [SerializeField]
+    float timeBetweenShakes;
+
+    [SerializeField]
+    float maxOffset;
+    Vector3 startingPosition;
+
+    Camera cam;
+
+    private void Awake()
+    {
+        if (cameraEffects == null) cameraEffects = this;
+        else Destroy(gameObject);
+        cam = Camera.main;
+        startingPosition = transform.position;
+    }
+
+
+    public void StartCameraShake(float endingTime)
+    {
+        InvokeRepeating("CamShake", 0, timeBetweenShakes); // start shaking and set ending time
+        Invoke("StopCamShake", endingTime);
+    }
+
+    void CamShake() // set new camera position
+    {
+        Vector3 pos = cam.transform.position;
+
+        float offsetX = Random.value * strength * 2 - strength;
+        float offsetY = Random.value * strength * 2 - strength;
+
+        pos.x += offsetX;
+        pos.y += offsetY;
+
+        cam.transform.position = new Vector3(Mathf.Clamp(pos.x, -maxOffset + startingPosition.x, maxOffset + startingPosition.x), Mathf.Clamp(pos.y, -maxOffset + startingPosition.y, maxOffset + startingPosition.y), -10);
+    }
+
+    void StopCamShake()
+    {
+        CancelInvoke("CamShake");
+        cam.transform.position = startingPosition; // reste cam position
+    }
+
+}
+
+[TeleporterScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class TeleporterScript : MonoBehaviour
+{
+    [SerializeField]
+    TeleporterPadScript padOne;
+
+    [SerializeField]
+    TeleporterPadScript padTwo;
+
+    public void Teleport(int direction, GameObject target, Vector2 targetOffset)
+    {
+        if (direction == 0) // check which way to teleport and add object to ignore od destination teleport
+        {
+            target.transform.position = (Vector2)padTwo.transform.position + targetOffset;
+            padTwo.AddToIgnore(target);
+        }
+        else if(direction == 1)
+        {
+            target.transform.position = (Vector2)padOne.transform.position + targetOffset;
+            padOne.AddToIgnore(target);
+        }
+    }
+}
+
+[TeleporterPadScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class TeleporterPadScript : MonoBehaviour, InteractableInterface
+{
+    TeleporterScript parrent;
+
+    [SerializeField]
+    int direction;
+
+    [SerializeField]
+    Transform nextTarget;
+    [SerializeField]
+    bool canBeUsedByEnemies;
+
+    List<GameObject> ignore = new List<GameObject>();
+
+    bool active;
+
+    private void Start()
+    {
+        parrent = transform.GetComponentInParent<TeleporterScript>();
+    }
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (!ignore.Contains(collision.gameObject)) {
+            if (collision.tag == "Enemy" && canBeUsedByEnemies) // check if teleport can be used by enemy, and if so teleport it
+            {
+                collision.gameObject.GetComponent<EnemyInterface>().SetTarget(nextTarget);
+                parrent.Teleport(direction, collision.gameObject, collision.transform.position - transform.position);
+            }
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D collision)
+    {
+        ignore.Remove(collision.gameObject);
+    }
+
+    public void AddToIgnore(GameObject target)
+    {
+        ignore.Add(target);
+    }
+
+    public int PowerUp(int ownedCharges) // teleport player
+    {
+        parrent.Teleport(direction, PlayerControllerScript.playerController.gameObject, PlayerControllerScript.playerController.transform.position - transform.position);
+        return 0;
+    }
+
+    public void Damage(int damage)
+    {
+
+    }
+
+    public int Drain(int damage)
+    {
+        return 0;
+    }
+}
+
+[PodScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public class PodScript : MonoBehaviour, InteractableInterface
+{
+    [SerializeField]
+    bool podOpen = false;
+
+    [SerializeField]
+    Sprite opened;
+
+    public void Damage(int damage)
+    {
+
+    }
+
+    public int Drain(int damage)
+    {
+        return 0;
+    }
+
+    public int PowerUp(int ownedCharges) // if its open and player use it, end game
+    {
+        if (podOpen) GameManager.gameManager.EndGame(true);
+        return 0;
+    }
+
+    public void OpenPod() // if opened, change sprite
+    {
+        podOpen = true;
+        gameObject.GetComponent<SpriteRenderer>().sprite = opened;
+    }
+
+}
+
+
+[LightBoxScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Experimental.Rendering.Universal;
+
+public class LightBoxScript : MonoBehaviour, InteractableInterface
+{
+
+    public static LightBoxScript lightBoxScript;
+
+    [SerializeField]
+    LampFlicker[] allLights;
+
+    [SerializeField]
+    float durationRemain;
+
+    [SerializeField]
+    float durationDrainPerHit;
+
+    [SerializeField]
+    int batteriesPerCharge;
+
+    [SerializeField]
+    float maxDuration;
+
+
+    [SerializeField]
+    Sprite[] energyBars;
+    [SerializeField]
+    SpriteRenderer barRenderer;
+
+    [SerializeField]
+    AudioSource powerUp;
+    [SerializeField]
+    AudioSource powerDown;
+
+    bool lightsOn = true;
+
+    private void Awake()
+    {
+        if (lightBoxScript == null) lightBoxScript = this;
+        else Destroy(gameObject);
+    }
+
+    public void Damage(int damage)
+    {
+        if (durationRemain > 0) durationRemain -= durationDrainPerHit * damage;
+    }
+
+    public int Drain(int damage)
+    {
+        if (durationRemain > 0)
+        {
+            durationRemain -= durationDrainPerHit * damage;
+            return 1;
+        }
+        return 0;
+    }
+
+    public int PowerUp(int ownedCharges)
+    {
+        if (ownedCharges >= batteriesPerCharge) // power up box
+        {
+            durationRemain = maxDuration;
+            powerUp.pitch = Random.Range(0.9f, 1.1f);
+            powerUp.Play();
+            return batteriesPerCharge;
+        }
+        return 0;
+    }
+
+    private void Update()
+    {
+        barRenderer.sprite = energyBars[Mathf.CeilToInt(Mathf.Clamp(durationRemain, 0, maxDuration) / maxDuration * (energyBars.Length - 1))];
+        if (durationRemain <= 0 && lightsOn) // after running out of power, stop flickering
+        {
+            foreach(LampFlicker light in allLights)
+            {
+                light.StopFlicker();
+                powerDown.pitch = Random.Range(0.9f, 1.1f);
+                powerDown.Play();
+            }
+            lightsOn = false;
+        }
+        else if(durationRemain > 0 && !lightsOn) // after powering on light start flickering randomly
+        {
+            foreach (LampFlicker light in allLights)
+            {
+                light.StartFlicker();
+            }
+            lightsOn = true;
+        }
+        durationRemain -= Time.deltaTime;
+    }
+
+}
+
+[LampFlicker]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Experimental.Rendering.Universal;
+
+public class LampFlicker : MonoBehaviour
+{
+
+    Light2D myLight;
+
+    void Start()
+    {
+        myLight = GetComponent<Light2D>();
+        StartCoroutine("Flicker");
+    }
+
+    IEnumerator Flicker()
+    {
+        while (true) // flicker every 1 to 20 seconds
+        {
+            yield return new WaitForSeconds(Random.Range(1, 20));
+            myLight.intensity = Random.Range(0.5f, 0.9f);
+            yield return new WaitForSeconds(Random.Range(0.1f, 0.5f));
+            myLight.intensity = 0.82f;
+        }
+    }
+    public void StopFlicker() // turn it off
+    {
+        myLight.intensity = 0;
+        StopAllCoroutines();
+    }
+
+    public void StartFlicker() // turn it on
+    {
+        StopAllCoroutines();
+        myLight.intensity = 0.82f;
+        StartCoroutine("Flicker");
+    }
+
+}
+
+[InteractableInterface]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+public interface InteractableInterface
+{
+    int PowerUp(int ownedCharges);
+    void Damage(int damage);
+    int Drain(int damage);
+}
+
+
+[ElectricalBoxScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+
+[RequireComponent(typeof(CircleCollider2D), typeof(AudioSource))]
+public class ElectricalBoxScript : MonoBehaviour
+{
+    [SerializeField]
+    float cooldown;
+    float cooldownRemian;
+
+    [SerializeField]
+    float range;
+
+    PlayerControllerScript player;
+    CircleCollider2D myCollider;
+
+    bool inRange;
+
+    AudioSource powerSound;
+
+    private void OnTriggerEnter2D(Collider2D collision) // if player in range set flag
+    {
+        if (collision.gameObject.tag == "Player")
+        {
+            inRange = true;
+        }
+    }
+
+    private void OnTriggerExit2D(Collider2D collision)// if player not in range reset flag
+    {
+        if (collision.gameObject.tag == "Player")
+        {
+            inRange = false;
+        }
+    }
+
+    private void Awake()
+    {
+        myCollider = GetComponent<CircleCollider2D>();
+        powerSound = GetComponent<AudioSource>();
+    }
+
+    private void Start()
+    {
+        player = PlayerControllerScript.playerController;
+        myCollider.radius = range;
+    }
+
+    private void Update()
+    {
+        if (inRange && cooldownRemian <= 0 && player.Charges != player.maxCharges) // if player in range and not fully charged, charge one par, play sound and set cooldown
+        {
+            player.GainCharge();
+            powerSound.pitch = 0.9f + ((float)player.Charges / (float)player.maxCharges) * 0.5f;
+            powerSound.Play();
+            cooldownRemian = cooldown;
+        }
+        cooldownRemian -= Time.deltaTime;
+    }
+
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.yellow;
+        Gizmos.DrawWireSphere(transform.position, range);
+    }
+}
+
+[BombScript]
+
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.UI;
+
+[RequireComponent(typeof(Animator))]
+public class BombScript : MonoBehaviour, InteractableInterface
+{
+
+    [SerializeField]
+    int charge;
+    [SerializeField]
+    int maxCharge;
+
+    [SerializeField]
+    float selfChargeDelay;
+
+    [SerializeField]
+    PodScript pod;
+
+    bool isReadyToExplode;
+
+    [SerializeField]
+    Image bar1;
+    [SerializeField]
+    Image bar2;
+
+    [SerializeField]
+    AudioSource hit;
+    [SerializeField]
+    AudioSource powerUp;
+    [SerializeField]
+    AudioSource siren;
+
+    Animator myAnimator;
+    SpriteRenderer myRenderer;
+
+    public static BombScript bombScript;
+
+    private void OnTriggerEnter2D(Collider2D collision)
+    {
+        if (collision.tag == "Enemy")
+        {
+            Damage(collision.GetComponent<EnemyInterface>().DealtDamage()); // When hit by enemy damage self and destroy enemy
+        }
+    }
+
+    private void Awake()
+    {
+        if (bombScript == null) bombScript = this;
+        else Destroy(gameObject);
+
+        myAnimator = transform.GetComponent<Animator>();
+        hit = transform.GetComponent<AudioSource>();
+        myRenderer = gameObject.GetComponent<SpriteRenderer>();
+    }
+
+    private void Start()
+    {
+        InvokeRepeating("AddCharge", selfChargeDelay, selfChargeDelay); // self cahrge every x seconds
+    }
+
+    void ChargeChange()
+    {
+        bar1.fillAmount = (float)charge / (float)maxCharge; // set visual indicator of charge
+        bar2.fillAmount = (float)charge / (float)maxCharge;
+    }
+
+    public void AddCharge()
+    {
+        if(charge < maxCharge)
+        {
+            charge++; // if charge is les then max, increase it
+        }
+
+        if (charge >= maxCharge && !isReadyToExplode) {
+            isReadyToExplode = true; // if charge at max, set bomb to invulnerable, play sound, and open pod
+            pod.OpenPod();
+            siren.Play();
+            myAnimator.SetTrigger("ReadyToExplode");
+            CameraEffects.cameraEffects.StartCameraShake(3);
+        }
+        ChargeChange();
+    }
+
+    public int GetCharge()
+    {
+        return charge;
+    }
+
+    public int PowerUp(int ownedCharges) // get charge and play sound
+    {
+        if(ownedCharges >= 1)
+        {
+            AddCharge();
+            powerUp.pitch = 0.8f + ((float)charge / (float)maxCharge) * 0.6f;
+            powerUp.Play();
+            return 1;
+        }
+        return 0;
+    }
+
+    public void Damage(int damage) // play sound and change color for a second
+    {
+        if (isReadyToExplode) return;
+        charge -= damage;
+        hit.Play();
+        myRenderer.color = Color.red;
+        CancelInvoke("NormalColor");
+        Invoke("NormalColor", 0.2f);
+        if (charge < 0)
+        {
+            GameManager.gameManager.EndGame(false);
+            return;
+        }
+        ChargeChange();
+    }
+
+
+    void NormalColor()
+    {
+        myRenderer.color = Color.white;
+    }
+
+    public int Drain(int damage)
+    {
+        throw new System.NotImplementedException();
+    }
+}
+
+
+[TurretScript]
+
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using UnityEngine;
+using UnityEngine.Experimental.Rendering.Universal;
+
+public class TurretScript : MonoBehaviour, InteractableInterface
+{
+    [SerializeField]
+    float range;
+    [SerializeField]
+    int damage;
+    [SerializeField]
+    float fireRate;
+    float toFire;
+
+    [SerializeField]
+    Animator animator;
+
+    [SerializeField]
+    Transform head;
+    SpriteRenderer headRenderer;
+    [SerializeField]
+    AudioSource shoot;
+    [SerializeField]
+    AudioSource powerUp;
+
+
+    [SerializeField]
+    Sprite[] energyBars;
+    [SerializeField]
+    SpriteRenderer barRenderer;
+
+    [SerializeField]
+    Light2D barrelLight;
+
+    [SerializeField]
+    float durationRemain;
+
+    [SerializeField]
+    float durationDrainPerHit;
+
+    [SerializeField]
+    int batteriesPerCharge;
+
+    [SerializeField]
+    float maxDuration;
+
+    [SerializeField]
+    LayerMask toIgnore;
+
+    GameObject target;
+
+    private void Start()
+    {
+        headRenderer = head.GetComponent<SpriteRenderer>();
+        InvokeRepeating("ScanForClosestEnemy", UnityEngine.Random.Range(0, 0.1f), 0.1f); // scan for closest enemy every x seconds
+    }
+
+    private void Update()
+    {
+        barRenderer.sprite = energyBars[Mathf.CeilToInt(durationRemain / maxDuration * (energyBars.Length - 1))]; // set energy bar indicator
+        if (durationRemain < 0) return; //if out of power, then return
+        if(toFire <= 0 && Fire()) // if ready to fire, fire
+        {
+            toFire = 1/fireRate;
+        }
+
+        if(target != null) // look at enemy
+        {
+            Vector3 diff = (target.transform.position - head.transform.position).normalized;
+            float rot_z = Mathf.Atan2(diff.y, diff.x) * Mathf.Rad2Deg;
+            if (rot_z < 90 && rot_z > -90) headRenderer.flipY = true;
+            else headRenderer.flipY = false;
+            head.rotation = Quaternion.Euler(0f, 0f, rot_z - 180);
+        }
+
+        toFire -= Time.deltaTime;
+        durationRemain -= Time.deltaTime;
+    }
+
+    private bool Fire()
+    {
+        if (target != null) // show muzzleflash and play sound
+        {
+            animator.SetTrigger("Fire");
+            barrelLight.enabled = true;
+            Invoke("HideLight", 0.3f);
+            target.GetComponent<EnemyInterface>().Hit(damage);
+            shoot.pitch = UnityEngine.Random.Range(0.9f, 1.1f);
+            shoot.Play();
+            return true;
+        }
+        return false;
+    }
+
+    void HideLight()
+    {
+        barrelLight.enabled = false;
+    }
+
+    public void Damage(int damage)
+    {
+        if (durationRemain > 0) durationRemain -= durationDrainPerHit * damage;
+    }
+
+    public int Drain(int damage)
+    {
+        if(durationRemain > 0)
+        {
+            durationRemain -= durationDrainPerHit * damage;
+            return 1;
+        }
+        return 0;
+    }
+
+    public int PowerUp(int ownedCharges)
+    {
+        if(ownedCharges >= batteriesPerCharge)
+        {
+            durationRemain = maxDuration;
+            powerUp.pitch = UnityEngine.Random.Range(0.9f, 1.1f);
+            powerUp.Play();
+            return batteriesPerCharge;
+        }
+        return 0;
+    }
+
+
+    void ScanForClosestEnemy() // get closest enemy taht it can see from list in spawner
+    {
+        EnemyInterface temp;
+        GameObject enemyObject = gameObject;
+        float distanceToClosest = Mathf.Infinity;
+
+        foreach(EnemyInterface enemy in SpawnerController.enemiesPresent)
+        {
+            float distance = Vector2.Distance(enemy.getPosition(), transform.position);
+            if (distance <= range && distance < distanceToClosest)
+            {
+                RaycastHit2D hit = Physics2D.Linecast(transform.position, enemy.getEnemy().transform.position, ~toIgnore);
+                if (hit.transform == enemy.getEnemy().transform)
+                {
+                    temp = enemy;
+                    distanceToClosest = distance;
+                    enemyObject = temp.getEnemy();
+                }
+            }
+        }
+        if (distanceToClosest != Mathf.Infinity) {
+            target = enemyObject;
+        }
+        else target = null;
+    }
+
+    private void OnDrawGizmos()
+    {
+        Gizmos.color = Color.red;
+        Gizmos.DrawWireSphere(transform.position, range);
+    }
+}
